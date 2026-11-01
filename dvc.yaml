@@ -1,0 +1,11 @@
+# dvc repro  : rebuild models + reports from data/. Track data with `dvc add data/images data/audio`.
+stages:
+  train_image:
+    cmd: python -m src.image_model
+    deps: [src/image_model.py, src/augment.py, data/images]
+    outs: [models/image_effnet.pt]
+    metrics: [reports/robustness.json]
+  train_audio:
+    cmd: python -m src.audio_model
+    deps: [src/audio_model.py, data/audio]
+    outs: [models/audio_head.joblib]

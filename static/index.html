@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TruthLens: forensic deepfake triage</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%23F59E0B' stroke-width='12'/><circle cx='50' cy='50' r='10' fill='%230E1A2B'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EEF1F4;--panel:#FFFFFF;--ink:#0E1A2B;--mute:#5B6B80;--line:#D5DCE4;--amber:#F59E0B;
+--real:#1F8A70;--fake:#D1432F;--unc:#B7791F;color-scheme:light}
+:root[data-theme=dark]{--bg:#0B1220;--panel:#121C2F;--ink:#E8EEF6;--mute:#8FA0B5;--line:#24324A;--real:#3CC9A3;--fake:#FF7A63;--unc:#F5B94A;color-scheme:dark}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0B1220;--panel:#121C2F;--ink:#E8EEF6;--mute:#8FA0B5;--line:#24324A;--real:#3CC9A3;--fake:#FF7A63;--unc:#F5B94A;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 "Familjen Grotesk",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:.75rem;padding:.9rem 1rem;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.logo{width:26px;height:26px;border-radius:50%;border:5px solid var(--amber);position:relative}.logo:after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--ink)}
+h1{font-size:1.15rem;margin:0;font-weight:700;letter-spacing:-.01em}header small{color:var(--mute)}
+#theme{margin-left:auto}
+main{max-width:860px;margin:0 auto;padding:1rem}
+nav{display:flex;gap:.25rem;margin-bottom:1rem;border-bottom:1px solid var(--line)}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:.6rem .9rem;font:inherit;color:var(--mute);cursor:pointer}
+nav button[aria-selected=true]{color:var(--ink);border-color:var(--amber);font-weight:700}
+button,input,textarea{font:inherit;color:inherit}
+.btn{background:var(--ink);color:var(--bg);border:0;border-radius:8px;padding:.65rem 1.1rem;cursor:pointer;font-weight:500}
+.btn.alt{background:none;color:var(--ink);border:1px solid var(--line)}.btn.real{background:var(--real);color:#fff}.btn.fake{background:var(--fake);color:#fff}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:1rem}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:1.6rem 1rem;text-align:center;cursor:pointer;color:var(--mute)}
+.drop.over{border-color:var(--amber);color:var(--ink)}
+textarea{width:100%;margin-top:.75rem;padding:.6rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);resize:vertical}
+.row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.job{display:flex;gap:.75rem;align-items:center;padding:.7rem 0;border-top:1px solid var(--line);cursor:pointer}
+.job:first-child{border-top:0}.job b{overflow-wrap:anywhere;flex:1;font-weight:500}.job small{color:var(--mute)}
+.chip{padding:.15rem .6rem;border-radius:999px;font-size:.85rem;font-weight:700;border:1.5px solid currentColor;white-space:nowrap}
+.Real{color:var(--real)}.Fake{color:var(--fake)}.Uncertain{color:var(--unc)}.queued,.error{color:var(--mute)}
+.verdict{font-size:2rem;font-weight:700;letter-spacing:-.02em;margin:.1rem 0}
+.scale{margin:.9rem 0}.scale .lab{display:flex;justify-content:space-between;font-size:.9rem;margin-bottom:.3rem}
+.bar{position:relative;height:14px;border-radius:7px;overflow:hidden;display:flex;background:var(--line)}
+.bar i{display:block;height:100%}.bar .r{width:35%;background:var(--real);opacity:.35}.bar .u{width:30%;background:var(--unc);opacity:.35}.bar .f{width:35%;background:var(--fake);opacity:.35}
+.pin{position:absolute;top:-3px;width:4px;height:20px;background:var(--ink);border-radius:2px;transform:translateX(-2px)}
+.axis{display:flex;font-size:.75rem;color:var(--mute);margin-top:.2rem}.axis span:nth-child(1){width:35%}.axis span:nth-child(2){width:30%;text-align:center}.axis span:nth-child(3){width:35%;text-align:right}
+.warn{border-left:4px solid var(--unc);padding:.4rem .75rem;margin:.5rem 0;background:var(--bg);border-radius:0 6px 6px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+img.heat{width:100%;border-radius:8px;display:block}canvas{width:100%;height:150px;display:block}
+h2{font-size:1rem;margin:0 0 .5rem}.mute{color:var(--mute)}ul{padding-left:1.1rem;margin:.3rem 0}
+.stat{font-size:1.8rem;font-weight:700;line-height:1.1}.stat small{display:block;font-size:.85rem;font-weight:400;color:var(--mute)}
+.rob{display:flex;align-items:center;gap:.5rem;margin:.3rem 0;font-size:.9rem}.rob div{height:10px;background:var(--amber);border-radius:5px}
+.empty{color:var(--mute);text-align:center;padding:1.2rem}
+@media(prefers-reduced-motion:no-preference){.pin{transition:left .6s cubic-bezier(.2,.8,.2,1)}}
+</style>
+</head>
+<body>
+<header><span class="logo"></span><div><h1>TruthLens</h1><small>Forensic evidence, not a bare score</small></div>
+<button id="theme" class="btn alt" aria-label="Toggle dark mode">Theme</button></header>
+<main>
+<nav role="tablist"><button role="tab" data-t="analyze" aria-selected="true">Analyze</button><button role="tab" data-t="review">Review queue <span id="rq"></span></button><button role="tab" data-t="dash">Dashboard</button></nav>
+
+<section id="analyze">
+ <div class="panel">
+  <label class="drop" id="drop" for="file" tabindex="0">Drop images, videos or audio here, or tap to choose<br><small id="picked">Batch uploads are queued and processed in parallel</small></label>
+  <input id="file" type="file" multiple accept="image/*,video/*,audio/*" hidden>
+  <textarea id="cap" rows="2" placeholder="Optional caption or post text. News-style wording raises the risk score."></textarea>
+  <div class="row" style="margin-top:.75rem"><span class="mute" id="health"></span><button class="btn" id="go">Analyze files</button></div>
+ </div>
+ <div id="detail"></div>
+ <div class="panel"><h2>Recent analyses</h2><div id="jobs"><div class="empty">Nothing analyzed yet. Add a file above.</div></div></div>
+</section>
+
+<section id="review" hidden><div class="panel"><h2>Needs a human decision</h2><p class="mute">Cases the system refused to call. Your label is saved to <code>data/review_labels.csv</code> for retraining.</p><div id="rqlist"></div></div></section>
+
+<section id="dash" hidden><div class="grid" id="stats"></div><div class="panel" id="rob"></div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=(u,o)=>fetch(u,o).then(async r=>{if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.statusText);return r.json()});
+let files=[],open=null,timer=null;
+// theme
+const root=document.documentElement;$("#theme").onclick=()=>{const d=getComputedStyle(root).colorScheme==="dark";root.dataset.theme=d?"light":"dark"};
+// tabs
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
+ ["analyze","review","dash"].forEach(t=>$("#"+t).hidden=t!==b.dataset.t);({review:loadReview,dash:loadStats,analyze:loadJobs})[b.dataset.t]()});
+// upload
+const drop=$("#drop"),inp=$("#file");
+const pick=f=>{files=[...f];$("#picked").textContent=files.length?files.length+" file(s): "+files.map(f=>f.name).join(", "):""};
+inp.onchange=()=>pick(inp.files);drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();inp.click()}};
+["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>pick(e.dataTransfer.files));
+$("#go").onclick=async()=>{if(!files.length){$("#picked").textContent="Choose at least one file first.";return}
+ const fd=new FormData();files.forEach(f=>fd.append("files",f));fd.append("caption",$("#cap").value);
+ $("#go").disabled=true;try{const r=await api("/api/analyze",{method:"POST",body:fd});files=[];inp.value="";$("#picked").textContent="Queued "+r.jobs.length+" file(s).";await loadJobs();if(r.jobs.length===1)show(r.jobs[0])}
+ catch(e){$("#picked").textContent="Upload failed: "+e.message}finally{$("#go").disabled=false}};
+// jobs
+async function loadJobs(){const js=await api("/api/jobs");$("#jobs").innerHTML=js.length?js.map(j=>`<div class="job" tabindex="0" data-id="${j.id}"><b>${esc(j.filename)}</b><small>${j.family?"family "+esc(j.family.slice(0,4)):""}</small><span class="chip ${j.verdict||j.status}">${esc(j.verdict||j.status)}</span></div>`).join(""):'<div class="empty">Nothing analyzed yet. Add a file above.</div>';
+ document.querySelectorAll(".job").forEach(e=>{e.onclick=()=>show(e.dataset.id);e.onkeydown=ev=>ev.key==="Enter"&&show(e.dataset.id)});
+ if(js.some(j=>j.status==="queued")){clearTimeout(timer);timer=setTimeout(()=>{loadJobs();if(open)show(open,true)},1200)}}
+function scale(label,p,v){const pos=Math.max(0,Math.min(1,p))*100;return `<div class="scale"><div class="lab"><span>${esc(label)}</span><span class="${v}">${v} (${(p*100).toFixed(0)}% synthetic)</span></div><div class="bar"><i class="r"></i><i class="u"></i><i class="f"></i><span class="pin" style="left:${pos}%"></span></div><div class="axis"><span>Real</span><span>Uncertain, needs review</span><span>Fake</span></div></div>`}
+const NAMES={image:"Image model",frames:"Frame model",lipsync:"Lip-sync check",audio:"Audio model"};
+async function show(id,quiet){open=id;const j=await api("/api/jobs/"+id),r=j.report,d=$("#detail");
+ if(j.status==="queued"){d.innerHTML=`<div class="panel"><h2>${esc(j.filename)}</h2><p class="mute">In the queue. This page updates when the worker finishes.</p></div>`;return}
+ if(j.status==="error"){d.innerHTML=`<div class="panel"><h2>${esc(j.filename)}</h2><p class="warn">Analysis failed: ${esc(r.error)}</p></div>`;return}
+ const f=r.fusion,ev=r.evidence||{};
+ d.innerHTML=`<div class="panel"><div class="mute">${esc(j.filename)}</div><div class="verdict ${f.verdict}">${esc(f.verdict==="Uncertain"?"Uncertain, needs human review":f.verdict)}</div>
+ ${Object.entries(f.modalities).map(([k,m])=>scale(NAMES[k]||k,m.p_fake,m.verdict)).join("")||'<p class="mute">No modality could be analyzed.</p>'}
+ ${f.conflicts.map(c=>`<div class="warn"><b>Modality conflict:</b> ${esc(c)}</div>`).join("")}
+ ${r.notes.map(n=>`<div class="warn">${esc(n)}</div>`).join("")}</div>
+ <div class="grid"><div class="panel"><h2>Disinformation risk: <span class="${r.risk.level==="High"?"Fake":r.risk.level==="Medium"?"Uncertain":"Real"}">${r.risk.level} (${r.risk.score})</span></h2>
+ <ul>${r.risk.signals.map(s=>`<li>${esc(s)}</li>`).join("")||"<li>No risk signals</li>"}</ul><p class="mute">Triage signal for reviewers. It does not decide whether a claim is true.</p>
+ ${r.family?`<p><b>Campaign family ${esc(r.family.id.slice(0,4))}</b>: ${r.family.size} near-duplicate upload(s)</p>`:""}</div>
+ ${ev.heatmap?`<div class="panel"><h2>Where the model looked</h2><img class="heat" alt="Heatmap overlay" src="${ev.heatmap}"><small class="mute">${esc(ev.image_method||"")}</small></div>`:""}
+ ${ev.sync?`<div class="panel"><h2>Lip-sync: mouth vs audio (r = ${ev.sync.r})</h2><canvas id="sync" width="600" height="300" role="img" aria-label="Mouth opening and audio energy over time"></canvas><small class="mute"><span style="color:var(--amber)">&#9632;</span> mouth &nbsp; <span style="color:var(--ink)">&#9632;</span> audio</small></div>`:""}</div>`;
+ if(ev.sync)plot(ev.sync)}
+function plot(s){const c=$("#sync"),x=c.getContext("2d"),W=c.width,H=c.height,css=getComputedStyle(root);
+ [[s.audio,css.getPropertyValue("--ink")],[s.mouth,"#F59E0B"]].forEach(([a,col])=>{x.beginPath();x.strokeStyle=col.trim()||"#000";x.lineWidth=3;a.forEach((v,i)=>{const px=i/(a.length-1||1)*W,py=H/2-Math.max(-2.5,Math.min(2.5,v))*H/5.5;i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke()})}
+// review
+async function loadReview(){const q=await api("/api/review");$("#rq").textContent=q.length?"("+q.length+")":"";
+ $("#rqlist").innerHTML=q.length?q.map(j=>`<div class="job" style="flex-wrap:wrap"><b>${esc(j.filename)}</b><span class="chip Uncertain">${((j.report.fusion.p_fake??.5)*100).toFixed(0)}% synthetic</span><button class="btn real" data-id="${j.id}" data-l="real">Real</button><button class="btn fake" data-id="${j.id}" data-l="fake">Fake</button></div>`).join(""):'<div class="empty">The queue is empty. Uncertain cases will show up here.</div>';
+ document.querySelectorAll("#rqlist button").forEach(b=>b.onclick=async()=>{await api("/api/review/"+b.dataset.id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({label:b.dataset.l})});loadReview()})}
+// dashboard
+async function loadStats(){const s=await api("/api/stats"),v=s.verdicts;
+ $("#stats").innerHTML=[[s.done,"files analyzed"],[v.Fake,"flagged fake"],[v.Uncertain,"sent to review"],[s.families,"campaign families"],[s.avg_seconds??"n/a","avg seconds per file"],[s.drift.status,"drift (PSI "+s.drift.psi+")"]].map(([a,b])=>`<div class="panel"><div class="stat">${esc(a)}<small>${esc(b)}</small></div></div>`).join("");
+ const r=s.robustness;$("#rob").innerHTML=r?`<h2>Image accuracy under JPEG compression</h2><div class="rob"><span style="width:70px">clean</span><div style="width:${r.clean*60}%"></div>${(r.clean*100).toFixed(0)}%</div>`+Object.entries(r.jpeg).map(([q,a])=>`<div class="rob"><span style="width:70px">Q${esc(q)}</span><div style="width:${a*60}%"></div>${(a*100).toFixed(0)}%</div>`).join(""):'<h2>Robustness curve</h2><p class="mute">Train the image model to populate this: <code>python -m src.image_model</code></p>'}
+api("/api/health").then(h=>{$("#health").textContent=`Queue: ${h.queue}. Image weights: ${h.image_weights?"loaded":"not trained"}. Audio head: ${h.audio_head?"loaded":"not trained"}.`});
+loadJobs();api("/api/review").then(q=>$("#rq").textContent=q.length?"("+q.length+")":"");
+</script>
+</body>
+</html>
