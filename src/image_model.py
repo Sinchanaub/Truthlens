@@ -71,7 +71,8 @@ def train(data_dir="data/images", epochs=3, bs=32, lr=1e-4):
     fake_idx = ds.class_to_idx["fake"]
     n_val = max(1, len(ds) // 5)
     tr, va = random_split(ds, [len(ds) - n_val, n_val])
-    m, opt, loss_fn = build(), None, torch.nn.BCEWithLogitsLoss()
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    m, loss_fn = build().to(dev), torch.nn.BCEWithLogitsLoss()
     opt = torch.optim.Adam(m.parameters(), lr=lr)
     try:
         import mlflow
@@ -81,7 +82,7 @@ def train(data_dir="data/images", epochs=3, bs=32, lr=1e-4):
     for ep in range(epochs):
         m.train()
         for x, y in DataLoader(tr, bs, shuffle=True, num_workers=2):
-            y = (y == fake_idx).float().unsqueeze(1)
+            x, y = x.to(dev), (y == fake_idx).float().unsqueeze(1).to(dev)
             opt.zero_grad(); loss = loss_fn(m(x), y); loss.backward(); opt.step()
         if mlflow:
             mlflow.log_metric("train_loss", float(loss), step=ep)
@@ -94,7 +95,7 @@ def train(data_dir="data/images", epochs=3, bs=32, lr=1e-4):
                 path, y = ds.samples[i]
                 img = Image.open(path).convert("RGB")
                 img = augment.jpeg(img, quality) if quality else img
-                Z.append(float(m(tf(img).unsqueeze(0)))); Y.append(float(y == fake_idx))
+                Z.append(float(m(tf(img).unsqueeze(0).to(dev)))); Y.append(float(y == fake_idx))
         return np.array(Z), np.array(Y)
 
     Z, Y = evaluate()
@@ -106,7 +107,7 @@ def train(data_dir="data/images", epochs=3, bs=32, lr=1e-4):
     temps = json.loads(tp.read_text()) if tp.exists() else {}
     temps["image"] = temps["frames"] = calibrate.fit_temperature(Z, Y)
     tp.write_text(json.dumps(temps))
-    torch.save(m.state_dict(), WEIGHTS)
+    torch.save(m.cpu().state_dict(), WEIGHTS)
     if mlflow:
         mlflow.log_metric("val_acc", acc); mlflow.log_metrics({f"val_acc_jpeg{q}": a for q, a in curve.items()}); mlflow.end_run()
     print("val acc", acc, "jpeg robustness", curve)
