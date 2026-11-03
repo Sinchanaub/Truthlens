@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 DB = os.getenv("DB_PATH", "data/truthlens.db")
@@ -13,13 +14,24 @@ CREATE TABLE IF NOT EXISTS reviews(job_id TEXT PRIMARY KEY, label TEXT, note TEX
 """
 
 
+_READY = set()
+
+
+@contextmanager
 def conn():
+    """Commit on success, always close (sqlite3's own `with` never closes the connection)."""
     Path(DB).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.executescript(SCHEMA)
-    return c
+    try:
+        if DB not in _READY:
+            c.execute("PRAGMA journal_mode=WAL")
+            c.executescript(SCHEMA)
+            _READY.add(DB)
+        yield c
+        c.commit()
+    finally:
+        c.close()
 
 
 def create_job(job_id, filename, caption):
