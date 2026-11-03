@@ -4,8 +4,6 @@ __pycache__/
 data/uploads/
 data/*.db*
 data/review_labels.csv
-models/*.pt
-models/*.joblib
 mlruns/
 .pytest_cache/
 .env
