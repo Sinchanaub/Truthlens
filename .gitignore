@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+data/uploads/
+data/*.db*
+data/review_labels.csv
+models/*.pt
+models/*.joblib
+mlruns/
+.pytest_cache/
+.env
+.vscode/
+.idea/
+*.log
+.DS_Store
