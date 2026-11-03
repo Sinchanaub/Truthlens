@@ -39,7 +39,7 @@ def _load():
 
 def to_tensor(img: Image.Image):
     import torch
-    a = (np.asarray(img.convert("RGB").resize((224, 224)), dtype=np.float32) / 255 - MEAN) / STD
+    a = (np.asarray(img.convert("RGB").resize((224, 224), Image.BILINEAR), dtype=np.float32) / 255 - MEAN) / STD
     return torch.tensor(a, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
 
 
