@@ -14,13 +14,20 @@ def _cal(name, p):
 
 def analyse(path, caption: str = "") -> dict:
     t0, k = time.time(), media.kind(path)
-    raw, evidence, notes, probs, phash = {}, {}, [], {}, None
+    raw, evidence, notes, probs, phash, untrained = {}, {}, [], {}, None, []
 
     if k == "image":
-        img = Image.open(path).convert("RGB")
-        r = image_model.predict(img)
-        raw["image"] = r["p_fake"]; evidence["heatmap"] = r["heatmap"]; evidence["image_method"] = r["method"]
+        img = media.open_image(path)
         phash = cluster.dhash(img)
+        face, found = media.face_crop(img)
+        if not found:
+            notes.append("No face detected. The model was trained on faces, so treat this result with extra caution.")
+        r = image_model.predict(face)
+        evidence["heatmap"] = r["heatmap"]; evidence["image_method"] = r["method"]
+        if r["trained"]:
+            raw["image"] = r["p_fake"]
+        else:
+            untrained.append("image")
 
     elif k == "video":
         frames = media.sample_frames(path, 8)
@@ -32,31 +39,42 @@ def analyse(path, caption: str = "") -> dict:
         else:
             notes.append(v["reason"] + " Falling back to frame model.")
         if frames:
-            rs = [image_model.predict(Image.fromarray(f), heatmap=False) for f in frames]
-            raw["frames"] = float(sum(x["p_fake"] for x in rs) / len(rs))
+            crops = [media.face_crop(Image.fromarray(f), force=True)[0] for f in frames]
+            rs = [image_model.predict(c, heatmap=False) for c in crops]
+            if rs[0]["trained"]:
+                raw["frames"] = float(sum(x["p_fake"] for x in rs) / len(rs))
+            else:
+                untrained.append("frames")
             worst = max(range(len(rs)), key=lambda i: rs[i]["p_fake"])
-            evidence["heatmap"] = image_model.predict(Image.fromarray(frames[worst]))["heatmap"]
+            evidence["heatmap"] = image_model.predict(crops[worst])["heatmap"]
             evidence["image_method"] = rs[0]["method"]
             phash = cluster.dhash(Image.fromarray(frames[len(frames) // 2]))
         if wav is not None:
             a = audio_model.predict(wav)
             if a["p_fake"] is not None:
-                raw["audio"] = a["p_fake"]; evidence["audio_method"] = a["method"]
+                evidence["audio_method"] = a["method"]
+                if a.get("trained"):
+                    raw["audio"] = a["p_fake"]
+                else:
+                    untrained.append("audio")
 
     elif k == "audio":
         a = audio_model.predict(media.load_audio(path))
         if a["p_fake"] is None:
             notes.append(a["method"])
         else:
-            raw["audio"] = a["p_fake"]; evidence["audio_method"] = a["method"]
+            evidence["audio_method"] = a["method"]
+            if a.get("trained"):
+                raw["audio"] = a["p_fake"]
+            else:
+                untrained.append("audio")
     else:
         raise ValueError("Unsupported file type")
 
-    probs = {n: _cal("image" if n == "image" else n, p) for n, p in raw.items()}
+    probs = {n: _cal(n, p) for n, p in raw.items()}
     fusion = fuse(probs)
-    untrained = [n for n in raw if raw[n] == 0.5]
     if untrained:
-        notes.append("No trained weights for: " + ", ".join(untrained) + ". Those modalities abstain. See README to train.")
+        notes.append("Excluded from the verdict (no trained weights): " + ", ".join(untrained) + ".")
     prov = risk.provenance(path)
     rk = risk.risk_score(fusion["p_fake"], bool(fusion["conflicts"]), prov, caption)
     return {"kind": k, "fusion": fusion, "risk": rk, "evidence": evidence, "notes": notes,
