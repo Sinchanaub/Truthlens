@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image, ImageOps
 
 IMG = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VID = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
@@ -71,3 +72,29 @@ def sample_frames(path, n: int = 8):
             frames.append(cv2.cvtColor(fr, cv2.COLOR_BGR2RGB))
     cap.release()
     return frames
+
+
+def open_image(path) -> Image.Image:
+    """RGB image with phone EXIF rotation applied."""
+    return ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+
+
+_HAAR = {}
+
+
+def face_crop(img: Image.Image, margin: float = 0.3, force: bool = False):
+    """Crop the largest face (+margin). The classifier was trained on face crops, so full-scene
+    frames are out-of-domain. Images that are already face-sized are left alone unless force=True.
+    Returns (PIL image, found_face)."""
+    if "c" not in _HAAR:
+        _HAAR["c"] = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    g = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2GRAY)
+    faces = _HAAR["c"].detectMultiScale(g, 1.1, 5, minSize=(48, 48))
+    if not len(faces):
+        return img, False
+    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+    if not force and w > 0.6 * img.width:
+        return img, True
+    m = int(margin * max(w, h))
+    box = (max(0, x - m), max(0, y - m), min(img.width, x + w + m), min(img.height, y + h + m))
+    return img.crop(box), True
