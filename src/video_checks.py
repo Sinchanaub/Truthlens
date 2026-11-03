@@ -84,7 +84,7 @@ def best_corr(mouth: np.ndarray, env: np.ndarray, max_lag: int = 4) -> float:
 
 def sync_to_p_fake(r: float) -> float:
     """Weak correlation -> likely dubbed/synthesised audio. Calibrated downstream."""
-    return float(1 / (1 + np.exp(6 * (r - 0.25))))
+    return float(1 / (1 + np.exp(4 * (r - 0.25))))
 
 
 def analyse(path, wav, sr: int = 16000) -> dict:
