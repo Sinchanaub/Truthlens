@@ -32,13 +32,18 @@ def ela_heat(img: Image.Image, q: int = 90) -> np.ndarray:
 def gradcam(model, x, img: Image.Image) -> str:
     """Grad-CAM on the last conv block of EfficientNet-B0. x: 1x3xHxW tensor."""
     import torch
-    acts, grads = {}, {}
-    layer = model.features[-1]
-    h1 = layer.register_forward_hook(lambda m, i, o: acts.__setitem__("a", o))
-    h2 = layer.register_full_backward_hook(lambda m, gi, go: grads.__setitem__("g", go[0]))
-    model.zero_grad()
-    model(x.requires_grad_(True)).sum().backward()
-    h1.remove(); h2.remove()
-    w = grads["g"].mean(dim=(2, 3), keepdim=True)
-    cam = torch.relu((w * acts["a"]).sum(1))[0].detach().numpy()
+    store = {}
+
+    def fwd(_m, _i, out):
+        store["a"] = out
+        out.register_hook(lambda g: store.__setitem__("g", g))
+
+    h = model.features[-1].register_forward_hook(fwd)
+    try:
+        model.zero_grad()
+        model(x).sum().backward()
+    finally:
+        h.remove()
+    w = store["g"].mean(dim=(2, 3), keepdim=True)
+    cam = torch.relu((w * store["a"]).sum(1))[0].detach().cpu().numpy()
     return overlay(img, cam)
