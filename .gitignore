@@ -9,3 +9,7 @@ models/*.joblib
 mlruns/
 .pytest_cache/
 .env
+.vscode/
+.idea/
+*.log
+.DS_Store

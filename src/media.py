@@ -13,9 +13,40 @@ AUD = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
 
 def kind(path) -> str | None:
     ext = Path(path).suffix.lower()
-    return "image" if ext in IMG else "video" if ext in VID else "audio" if ext in AUD else None
 
+    if ext in IMG:
+        return "image"
 
+    if ext in VID:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "csv=p=0",
+                    str(path)
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            streams = result.stdout.strip().splitlines()
+
+            if "video" in streams:
+                return "video"
+
+            if "audio" in streams:
+                return "audio"
+
+        except Exception:
+            return "video"
+
+    if ext in AUD:
+        return "audio"
+
+    return None
 def load_audio(path, sr: int = 16000):
     """Mono float32 array at `sr`, or None if ffmpeg is missing / no audio track."""
     if not shutil.which("ffmpeg"):
