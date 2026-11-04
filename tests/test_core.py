@@ -73,3 +73,72 @@ def test_api_image_roundtrip():
         time.sleep(0.5)
     assert j["status"] == "done" and j["report"]["fusion"]["verdict"] in ("Real", "Fake", "Uncertain")
     assert c.post("/api/analyze", files=[("files", ("x.txt", b"hi", "text/plain"))]).status_code == 415
+
+
+# ---- regression tests for the OpenCV-5 / silent-model-failure bugs ----
+def test_face_crop_survives_missing_cascade(monkeypatch):
+    """OpenCV 5 has no cv2.CascadeClassifier: analysis must degrade, not crash."""
+    import cv2
+
+    from src import media
+    monkeypatch.delattr(cv2, "CascadeClassifier", raising=False)
+    monkeypatch.setitem(media._DET, "d", media._pick_detector())
+    img = Image.effect_noise((200, 200), 50).convert("RGB")
+    out, found = media.face_crop(img)
+    assert out.size == (200, 200) and found is False
+
+
+def test_pipeline_image_without_face_detector(monkeypatch, tmp_path):
+    from src import media, pipeline
+    monkeypatch.setitem(media._DET, "d", ("none", None))
+    p = tmp_path / "a.jpg"
+    Image.effect_noise((200, 200), 50).convert("RGB").save(p)
+    rep = pipeline.analyse(str(p))
+    assert rep["fusion"]["verdict"] in ("Real", "Fake", "Uncertain")
+    assert any("No face detector" in n for n in rep["notes"])
+
+
+def test_audio_load_failure_is_reported_not_silent(monkeypatch, tmp_path):
+    from src import audio_model, pipeline
+    head = tmp_path / "audio_head.joblib"
+    head.write_bytes(b"not a real model")
+    monkeypatch.setattr(audio_model, "HEAD", head)
+    audio_model._STATE.clear()
+    r = audio_model.predict(np.zeros(32000, dtype=np.float32))
+    assert r["trained"] is False and r["error"]
+    raw, ev, notes, untrained = {}, {}, [], []
+    pipeline._audio(np.zeros(32000, dtype=np.float32), raw, ev, notes, untrained)
+    assert not raw and not untrained and any("could not run" in n for n in notes)
+    audio_model._STATE.clear()
+
+
+def test_health_reports_model_status():
+    h = TestClient(app).get("/api/health").json()
+    assert {"opencv", "face_detector", "image_model", "audio_model"} <= set(h)
+
+
+def test_audio_train_records_accuracy_and_temperature(monkeypatch, tmp_path):
+    """Smoke-test train() with a stub encoder (no HuggingFace download)."""
+    import json
+    import sys
+    import types
+
+    from src import audio_model, media
+    fake = types.SimpleNamespace(
+        AutoFeatureExtractor=types.SimpleNamespace(from_pretrained=lambda n: None),
+        AutoModel=types.SimpleNamespace(from_pretrained=lambda n: types.SimpleNamespace(eval=lambda: None)))
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    rng = np.random.default_rng(0)
+    for cls in ("real", "fake"):
+        (tmp_path / "data" / cls).mkdir(parents=True)
+        for i in range(20):
+            (tmp_path / "data" / cls / f"{i}.wav").write_bytes(bytes([i]))
+    monkeypatch.setattr(media, "load_audio", lambda f: np.zeros(20000, dtype=np.float32))
+    monkeypatch.setattr(audio_model, "embed", lambda w: rng.normal(size=32) + (1.5 if rng.random() < .5 else -1.5))
+    monkeypatch.setattr(audio_model, "HEAD", tmp_path / "models" / "audio_head.joblib")
+    monkeypatch.chdir(tmp_path)
+    audio_model.train(str(tmp_path / "data"))
+    assert (tmp_path / "models" / "audio_head.joblib").exists()
+    assert "audio" in json.loads((tmp_path / "models" / "temperatures.json").read_text())
+    assert "val_acc" in json.loads((tmp_path / "reports" / "audio_eval.json").read_text())
+    audio_model._STATE.clear()
