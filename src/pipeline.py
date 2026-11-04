@@ -12,6 +12,20 @@ def _cal(name, p):
     return None if p is None else temperature_scale(p, get_T(name))
 
 
+def _audio(wav, raw, evidence, notes, untrained):
+    a = audio_model.predict(wav)
+    if a["p_fake"] is None:
+        notes.append(a["method"])
+        return
+    evidence["audio_method"] = a["method"]
+    if a.get("trained"):
+        raw["audio"] = a["p_fake"]
+    elif a.get("error"):
+        notes.append(f"Audio model could not run, so audio is not part of this verdict ({a['error']}).")
+    else:
+        untrained.append("audio")
+
+
 def analyse(path, caption: str = "") -> dict:
     t0, k = time.time(), media.kind(path)
     raw, evidence, notes, probs, phash, untrained = {}, {}, [], {}, None, []
@@ -21,8 +35,12 @@ def analyse(path, caption: str = "") -> dict:
         phash = cluster.dhash(img)
         face, found = media.face_crop(img)
         if not found:
-            notes.append("No face detected. The model was trained on faces, so treat this result with extra caution.")
+            notes.append("No face detector available on this server; the whole image was analysed. The model was trained on faces, so treat this result with caution."
+                         if media.face_detector_name() == "none" else
+                         "No face detected. The model was trained on faces, so treat this result with extra caution.")
         r = image_model.predict(face)
+        if r.get("error"):
+            notes.append(f"Image model could not run ({r['error']}).")
         evidence["heatmap"] = r["heatmap"]; evidence["image_method"] = r["method"]
         if r["trained"]:
             raw["image"] = r["p_fake"]
@@ -50,24 +68,13 @@ def analyse(path, caption: str = "") -> dict:
             evidence["image_method"] = rs[0]["method"]
             phash = cluster.dhash(Image.fromarray(frames[len(frames) // 2]))
         if wav is not None:
-            a = audio_model.predict(wav)
-            if a["p_fake"] is not None:
-                evidence["audio_method"] = a["method"]
-                if a.get("trained"):
-                    raw["audio"] = a["p_fake"]
-                else:
-                    untrained.append("audio")
+            _audio(wav, raw, evidence, notes, untrained)
 
     elif k == "audio":
-        a = audio_model.predict(media.load_audio(path))
-        if a["p_fake"] is None:
-            notes.append(a["method"])
-        else:
-            evidence["audio_method"] = a["method"]
-            if a.get("trained"):
-                raw["audio"] = a["p_fake"]
-            else:
-                untrained.append("audio")
+        wav = media.load_audio(path)
+        if wav is None:
+            notes.append("Could not decode the audio (ffmpeg missing or unreadable file).")
+        _audio(wav, raw, evidence, notes, untrained)
     else:
         raise ValueError("Unsupported file type")
 
