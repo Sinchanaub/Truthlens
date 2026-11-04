@@ -21,6 +21,9 @@ def build():
     return m
 
 
+_ERR = {"e": None}
+
+
 def _load():
     global _MODEL
     if _MODEL is None:
@@ -30,11 +33,17 @@ def _load():
                 m = build()
                 m.load_state_dict(torch.load(WEIGHTS, map_location="cpu"))
                 _MODEL = m.eval()
+                _ERR["e"] = None
             else:
                 _MODEL = False
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             _MODEL = False
+            _ERR["e"] = f"{type(e).__name__}: {e}"[:300]
     return _MODEL or None
+
+
+def status() -> dict:
+    return {"weights_file": WEIGHTS.exists(), "loaded": bool(_MODEL), "error": _ERR["e"]}
 
 
 def to_tensor(img: Image.Image):
@@ -46,7 +55,8 @@ def to_tensor(img: Image.Image):
 def predict(img: Image.Image, heatmap: bool = True) -> dict:
     m = _load()
     if m is None:
-        return {"p_fake": 0.5, "logit": 0.0, "trained": False, "method": "ELA only (no trained weights, abstains)",
+        return {"p_fake": 0.5, "logit": 0.0, "trained": False, "error": _ERR["e"],
+                "method": "ELA only (model failed to load, abstains)" if _ERR["e"] else "ELA only (no trained weights, abstains)",
                 "heatmap": explain.overlay(img, explain.ela_heat(img)) if heatmap else None}
     import torch
     x = to_tensor(img)
