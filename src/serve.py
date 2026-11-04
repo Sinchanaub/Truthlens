@@ -1,7 +1,9 @@
 """FastAPI app: upload (single/batch), job polling, review queue, stats."""
 import csv
 import os
+import threading
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -12,15 +14,39 @@ from . import db, media, monitor, worker
 
 UPLOADS = Path(os.getenv("UPLOAD_DIR", "data/uploads"))
 MAX_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
-app = FastAPI(title="TruthLens", version="1.0")
+
+
+def _warm():
+    """Load models in the background at boot so the first upload is fast and load errors show in /api/health."""
+    from . import audio_model, image_model
+    media.face_detector_name()
+    image_model._load()
+    audio_model._load()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    if os.getenv("WARMUP", "1") == "1":
+        threading.Thread(target=_warm, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="TruthLens", version="1.0", lifespan=lifespan)
 
 
 @app.get("/api/health")
-def health():
-    from .audio_model import HEAD
-    from .image_model import WEIGHTS
+def health(deep: bool = False):
+    """deep=true forces model loading now and reports why anything failed (open this on the deployed site)."""
+    import cv2
+
+    from . import audio_model, image_model
+    if deep:
+        image_model._load()
+        audio_model._load()
     return {"ok": True, "queue": "redis" if os.getenv("REDIS_URL") else "in-process",
-            "image_weights": WEIGHTS.exists(), "audio_head": HEAD.exists()}
+            "image_weights": image_model.WEIGHTS.exists(), "audio_head": audio_model.HEAD.exists(),
+            "opencv": cv2.__version__, "face_detector": media.face_detector_name(),
+            "image_model": image_model.status(), "audio_model": audio_model.status()}
 
 
 @app.post("/api/analyze")
