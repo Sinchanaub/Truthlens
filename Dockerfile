@@ -1,9 +1,14 @@
 FROM python:3.11-slim
-ARG WITH_ML=0
+# ML (torch, wav2vec2, scikit-learn) is ON by default: without it every model abstains and every verdict is Uncertain.
+ARG WITH_ML=1
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt requirements-ml.txt ./
-RUN pip install --no-cache-dir -r requirements.txt && if [ "$WITH_ML" = "1" ]; then pip install --no-cache-dir -r requirements-ml.txt; fi
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ "$WITH_ML" = "1" ]; then \
+         pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+         && pip install --no-cache-dir -r requirements-ml.txt; \
+       fi
 # mediapipe pulls in opencv-contrib-python, which overlaps opencv-python-headless and can leave cv2 broken
 # (e.g. "module 'cv2' has no attribute 'CascadeClassifier'"). Keep exactly one OpenCV build.
 RUN pip uninstall -y opencv-python opencv-contrib-python opencv-contrib-python-headless opencv-python-headless \
