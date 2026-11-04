@@ -81,7 +81,7 @@ def train(data_dir="data/audio"):
                 X.append(embed(w)); y.append(label)
     Xtr, Xte, ytr, yte = train_test_split(np.array(X), np.array(y), test_size=0.2, stratify=y, random_state=0)
     clf = LogisticRegression(max_iter=2000).fit(Xtr, ytr)
-    z = clf.decision_function(Xte)
+    z = clf.decision_function(Xteaaa
     acc = float(clf.score(Xte, yte))
     print("val acc", acc)
     # Record the numbers a reviewer will ask for, and calibrate the audio score (it had no temperature before).
