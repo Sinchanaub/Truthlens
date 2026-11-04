@@ -21,7 +21,8 @@ def _warm():
     from . import audio_model, image_model
     media.face_detector_name()
     image_model._load()
-    audio_model._load()
+    if os.getenv("WARMUP_AUDIO", "0") == "1":  # wav2vec2 is ~400MB; default to lazy-load on small instances
+        audio_model._load()
 
 
 @asynccontextmanager
