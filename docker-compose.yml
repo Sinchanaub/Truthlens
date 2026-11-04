@@ -1,8 +1,8 @@
 # docker compose up --build              (API + UI + Redis + 2 workers)
 # docker compose up --scale worker=4     (throughput benchmark vs worker count)
-# WITH_ML=0 docker compose up --build    (lightweight, no models)
+# WITH_ML=1 docker compose up --build    (include torch/transformers/mediapipe)
 x-app: &app
-  build: {context: ., args: {WITH_ML: "${WITH_ML:-1}"}}
+  build: {context: ., args: {WITH_ML: "${WITH_ML:-0}"}}
   environment: {REDIS_URL: "redis://redis:6379/0", DB_PATH: /app/data/truthlens.db, UPLOAD_DIR: /app/data/uploads, MODEL_DIR: /app/models}
   volumes: ["./data:/app/data", "./models:/app/models", "./reports:/app/reports"]
   depends_on: [redis]
