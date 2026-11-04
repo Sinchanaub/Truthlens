@@ -3,6 +3,8 @@ Needs no training. Uses MediaPipe FaceMesh if installed, else OpenCV Haar + mout
 import cv2
 import numpy as np
 
+from . import media
+
 _MESH = {}
 
 
@@ -21,7 +23,10 @@ def mouth_series(path, max_frames: int = 600):
     cap = cv2.VideoCapture(str(path))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     mesh = _mesh()
-    haar = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    haar = None if mesh is not None else media.haar()
+    if mesh is None and haar is None:  # no landmark model and no cascade support in this OpenCV build
+        cap.release()
+        return np.array([], dtype=np.float32), fps, 0.0, "no-face-detector"
     vals, prev, n = [], None, 0
     while n < max_frames:
         ok, fr = cap.read()
@@ -89,6 +94,8 @@ def sync_to_p_fake(r: float) -> float:
 
 def analyse(path, wav, sr: int = 16000) -> dict:
     mouth, fps, ratio, method = mouth_series(path)
+    if method == "no-face-detector":
+        return {"applicable": False, "reason": "No face/landmark detector available on this server, lip-sync check skipped."}
     if wav is None or ratio < 0.5 or len(mouth) < 20:
         return {"applicable": False, "reason": "Not a talking-head clip with audio (no stable face or no audio track)."}
     env = envelope(wav, sr, fps, len(mouth))
